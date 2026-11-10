@@ -1,0 +1,50 @@
+# codeassist-dex
+
+Pre-dexed Android libraries for [CodeAssist](https://github.com/tyron12233/CodeAssist), laid out like Maven
+Central but holding dex instead of jars.
+
+When CodeAssist builds an app on a phone, converting the app's libraries to dex (D8) used to be most of a new
+project's first build: about 85 seconds of a 97-second Compose build on a 2 GB device. With this repository the
+phone downloads each library's finished dex instead, and the same build takes about 25 seconds. The phone only
+downloads the library versions its project uses.
+
+## Layout
+
+```
+dex/<flavor>/<group path>/<artifact>/<version>/<artifact>-<version>.dex.zip
+```
+
+for example `dex/v2-r8-8.13.19/minApi26-debug-merged/androidx/compose/ui/ui-android/1.11.2/ui-android-1.11.2.dex.zip`.
+
+The flavor names the D8 build that made the dex and how: a CodeAssist release with a different D8 reads and
+writes its own flavor, so files from different D8 versions never mix. Dex is built for minSdk 26 and runs on
+every later Android version; projects below minSdk 26 dex their libraries on the phone as before.
+
+Each archive holds the merged dex of every jar the library version ships (one for a plain jar; the
+`classes.jar` and any `libs/` jars of an AAR), plus a manifest naming each jar's content hash.
+
+## Trust
+
+Every archive is signed. Its manifest lists the SHA-256 of every file in it and is signed with an ECDSA P-256
+key that only the publisher holds; the public half is built into CodeAssist. A phone installs an archive only
+when:
+
+- the signature verifies and every file matches the manifest, with nothing extra;
+- the manifest names the exact content hash of the jar the phone resolved (a republished or patched artifact
+  is dexed on the phone instead);
+- the dex defines every class that jar contains.
+
+Anything else is ignored and the library is dexed on the phone.
+
+## Adding libraries
+
+Add a line to [`libraries.txt`](libraries.txt): a Maven coordinate (`group:artifact:version`) or a CodeAssist
+project template (`template:<id>`). On push, the [publish workflow](.github/workflows/publish.yml) resolves each
+line in a fresh project, dexes every library version in its dependency closure that isn't published yet, signs
+it and commits it. Published versions are never rewritten.
+
+To publish by hand with the CodeAssist CLI:
+
+```
+codeassist dexrepo --repo . --key <signing key> --libraries libraries.txt
+```
