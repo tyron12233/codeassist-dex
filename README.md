@@ -33,8 +33,8 @@ index/<flavor>/<group path>/<artifact>/<version>/<artifact>-<version>.index.zip
 
 The flavor is the segment format plus a digest of the IDE's indexers and their versions, so a CodeAssist release
 that changes an indexer gets a flavor of its own. Each archive holds `<index id>/v<index version>/<key>.seg` for
-every index the IDE runs: a jar's segments (`jar-<content id>`) and, for an AAR, its `res/` folder's
-(`res-<AAR content id>`). A phone installs only
+every index the IDE runs: a jar's segments (`jar-<content id>`), for an AAR its `res/` folder's
+(`res-<AAR content id>`), and the version's `-sources.jar` (`src-<content id>`: parameter names and javadoc). A phone installs only
 the indexes, and versions, it runs itself; an index that changed version is rebuilt on the phone, like
 IntelliJ's shared indexes. Segments are keyed by the jar's content, so the same jar in any project or on any
 device uses the same segments.
