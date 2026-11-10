@@ -28,10 +28,13 @@ Each archive holds the merged dex of every jar the library version ships (one fo
 Index segments live next to them:
 
 ```
-index/<format>/<group path>/<artifact>/<version>/<artifact>-<version>.index.zip
+index/<flavor>/<group path>/<artifact>/<version>/<artifact>-<version>.index.zip
 ```
 
-Each holds `<index id>/v<index version>/jar-<content id>.seg` for every index the IDE runs. A phone installs only
+The flavor is the segment format plus a digest of the IDE's indexers and their versions, so a CodeAssist release
+that changes an indexer gets a flavor of its own. Each archive holds `<index id>/v<index version>/<key>.seg` for
+every index the IDE runs: a jar's segments (`jar-<content id>`) and, for an AAR, its `res/` folder's
+(`res-<AAR content id>`). A phone installs only
 the indexes, and versions, it runs itself; an index that changed version is rebuilt on the phone, like
 IntelliJ's shared indexes. Segments are keyed by the jar's content, so the same jar in any project or on any
 device uses the same segments.
@@ -52,10 +55,11 @@ Anything else is ignored and the library is dexed on the phone.
 
 ## Adding libraries
 
-Add a line to [`libraries.txt`](libraries.txt): a Maven coordinate (`group:artifact:version`) or a CodeAssist
-project template (`template:<id>`). On push, the [publish workflow](.github/workflows/publish.yml) resolves each
+Add a line to [`libraries.txt`](libraries.txt): `group:artifact` (its 3 newest stable releases), a full
+coordinate (`group:artifact:version`), or a CodeAssist project template (`template:<id>`). On push, and every Monday, the [publish workflow](.github/workflows/publish.yml) resolves each
 line in a fresh project, dexes and indexes every library version in its dependency closure that isn't published
-yet, signs it and commits it. Published versions are never rewritten.
+yet, signs it and commits it. Published versions are never rewritten. The weekly run also picks up new library releases,
+and a CodeAssist release with a new D8 or new indexers, whose flavors it fills in from scratch.
 
 To publish by hand with the CodeAssist CLI:
 

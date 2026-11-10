@@ -1,12 +1,16 @@
 name: Publish dex
 
-# Dex and sign every library version that libraries.txt reaches and the repository doesn't hold yet, then
-# commit the new archives. Uses the CodeAssist CLI from a CodeAssist release (`codeassist-cli.zip`), so the dex
-# is made by that release's own D8 and lands under its flavor.
+# Dex, index and sign every library version that libraries.txt reaches and the repository doesn't hold yet, then
+# commit the new archives. Uses the CodeAssist CLI from the latest CodeAssist release (`codeassist-cli.zip`), so the
+# dex is made by that release's own D8 and the index by its own indexers, each under its own flavor path. The
+# weekly run therefore picks up both new library releases and a CodeAssist release with a new D8 or indexer,
+# which it fills in from scratch; lines already fully published are skipped without dexing anything.
 on:
   push:
     branches: [ main ]
     paths: [ libraries.txt, .github/workflows/publish.yml ]
+  schedule:
+    - cron: "0 3 * * 1"   # Mondays 03:00 UTC
   workflow_dispatch:
     inputs:
       cli:
