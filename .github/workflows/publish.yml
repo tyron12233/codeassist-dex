@@ -68,8 +68,9 @@ jobs:
       - name: Commit new archives
         run: |
           set -euo pipefail
-          git add dex
+          # Both trees: the CLI writes a library's dex under dex/ and its code-completion index under index/.
+          git add dex index
           if git diff --cached --quiet; then echo "Nothing new to publish."; exit 0; fi
           git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
-            commit -q -m "Publish dex for $(git diff --cached --name-only | wc -l | tr -d ' ') new archive(s)"
+            commit -q -m "Publish $(git diff --cached --name-only | wc -l | tr -d ' ') new archive(s)"
           git push
