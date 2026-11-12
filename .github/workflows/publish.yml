@@ -1,16 +1,25 @@
 name: Publish dex
 
 # Dex, index and sign every library version that libraries.txt reaches and the repository doesn't hold yet, then
-# commit the new archives. Uses the CodeAssist CLI from the latest CodeAssist release (`codeassist-cli.zip`), so the
-# dex is made by that release's own D8 and the index by its own indexers, each under its own flavor path. The
-# weekly run therefore picks up both new library releases and a CodeAssist release with a new D8 or indexer,
-# which it fills in from scratch; lines already fully published are skipped without dexing anything.
+# commit the new archives. Uses the CodeAssist CLI from a CodeAssist release (`codeassist-cli.zip`), so the dex is
+# made by that release's own D8 and the index by its own indexers, each under its own flavor path.
+#
+# Three things start a run:
+#  - a change to libraries.txt, and the Monday schedule, which pick up new library releases;
+#  - a new CodeAssist release, which the 6-hourly schedule notices by comparing the latest release's tag with
+#    the one recorded in `.cli-release`. A release that changed D8 or an indexer (an index format change) reads
+#    a flavor this repository doesn't have yet, so every line counts as unpublished and is rebuilt under the new
+#    flavor; a release that changed neither finds everything published and only records the tag. Until that run
+#    finishes, phones on the new release index those libraries themselves, as they would without this repository;
+#  - a manual run, optionally naming the release whose CLI to use.
+# The 6-hourly check exits in seconds when the latest release is the recorded one.
 on:
   push:
     branches: [ main ]
     paths: [ libraries.txt, .github/workflows/publish.yml ]
   schedule:
-    - cron: "0 3 * * 1"   # Mondays 03:00 UTC
+    - cron: "0 3 * * 1"     # Mondays 03:00 UTC: new library releases
+    - cron: "23 */6 * * *"  # every 6 hours: a new CodeAssist release
   workflow_dispatch:
     inputs:
       cli:
@@ -31,30 +40,53 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Which release's CLI to use, and whether there is anything for it to do.
+      - name: Plan
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${{ inputs.cli }}"
+          if [ -z "$tag" ]; then tag=$(gh api repos/tyron12233/CodeAssist/releases/latest --jq .tag_name); fi
+          recorded=$(cat .cli-release 2>/dev/null || true)
+          echo "CodeAssist release: $tag (last published with: ${recorded:-none})"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          # The release check only has work when the release changed; every other trigger always runs.
+          if [ "${{ github.event.schedule }}" = "23 */6 * * *" ] && [ "$tag" = "$recorded" ]; then
+            echo "Already published with $tag."; echo "run=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          # A release gets its CLI attached by a workflow of its own, minutes after it is published.
+          if ! gh api "repos/tyron12233/CodeAssist/releases/tags/$tag" --jq '.assets[].name' | grep -qx codeassist-cli.zip; then
+            echo "::notice::$tag has no codeassist-cli.zip yet; the next scheduled run retries."
+            echo "run=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          echo "run=true" >> "$GITHUB_OUTPUT"
+
       - uses: actions/setup-java@v4
+        if: steps.plan.outputs.run == 'true'
         with:
           distribution: temurin
           java-version: "25"
 
       # The CLI dexes against android.jar from an installed SDK platform.
       - uses: android-actions/setup-android@v3
+        if: steps.plan.outputs.run == 'true'
         with:
           packages: "platforms;android-36"
 
       - name: Download the CodeAssist CLI
+        if: steps.plan.outputs.run == 'true'
         run: |
           set -euo pipefail
-          tag="${{ inputs.cli }}"
-          if [ -z "$tag" ]; then
-            url="https://github.com/tyron12233/CodeAssist/releases/latest/download/codeassist-cli.zip"
-          else
-            url="https://github.com/tyron12233/CodeAssist/releases/download/$tag/codeassist-cli.zip"
-          fi
+          url="https://github.com/tyron12233/CodeAssist/releases/download/${{ steps.plan.outputs.tag }}/codeassist-cli.zip"
           curl -fsSL "$url" -o "$RUNNER_TEMP/cli.zip"
           unzip -q "$RUNNER_TEMP/cli.zip" -d "$RUNNER_TEMP/cli"
           echo "CLI=$RUNNER_TEMP/cli/codeassist/bin/codeassist" >> "$GITHUB_ENV"
 
       - name: Dex and sign new libraries
+        id: publish
+        if: steps.plan.outputs.run == 'true'
         env:
           DEX_SIGNING_KEY: ${{ secrets.DEX_SIGNING_KEY }}
         run: |
@@ -65,12 +97,18 @@ jobs:
           printf '%s' "$DEX_SIGNING_KEY" | base64 -d > "$key"
           "$CLI" dexrepo --repo . --key "$key" --libraries libraries.txt --cache "$RUNNER_TEMP/caches"
 
+      # Runs after a failed publish too: a line that failed (an unresolvable library) leaves the others' archives
+      # worth committing, and recording the release keeps the 6-hourly check from redoing the whole run each
+      # time. The job still ends red, and the Monday run retries the failed lines.
       - name: Commit new archives
+        if: always() && steps.plan.outputs.run == 'true' && steps.publish.conclusion != 'skipped'
         run: |
           set -euo pipefail
+          printf '%s\n' "${{ steps.plan.outputs.tag }}" > .cli-release
           # Both trees: the CLI writes a library's dex under dex/ and its code-completion index under index/.
-          git add dex index
+          git add dex index .cli-release
           if git diff --cached --quiet; then echo "Nothing new to publish."; exit 0; fi
+          archives=$(git diff --cached --name-only -- dex index | wc -l | tr -d ' ')
           git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
-            commit -q -m "Publish $(git diff --cached --name-only | wc -l | tr -d ' ') new archive(s)"
+            commit -q -m "Publish $archives new archive(s) with CodeAssist ${{ steps.plan.outputs.tag }}"
           git push

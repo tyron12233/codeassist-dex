@@ -56,10 +56,11 @@ Anything else is ignored and the library is dexed on the phone.
 ## Adding libraries
 
 Add a line to [`libraries.txt`](libraries.txt): `group:artifact` (its 3 newest stable releases), a full
-coordinate (`group:artifact:version`), or a CodeAssist project template (`template:<id>`). On push, and every Monday, the [publish workflow](.github/workflows/publish.yml) resolves each
+coordinate (`group:artifact:version`), or a CodeAssist project template (`template:<id>`). On push, every Monday, and within hours of a new CodeAssist release (whose D8 or indexers may read a new flavor), the [publish workflow](.github/workflows/publish.yml) resolves each
 line in a fresh project, dexes and indexes every library version in its dependency closure that isn't published
-yet, signs it and commits it. Published versions are never rewritten. The weekly run also picks up new library releases,
-and a CodeAssist release with a new D8 or new indexers, whose flavors it fills in from scratch.
+yet, signs it and commits it. Published versions are never rewritten. The Monday run picks up new library releases.
+A CodeAssist release with a new D8 or changed indexers reads a new flavor, which the run that follows the release
+fills in from scratch; `.cli-release` records the release the repository was last published with.
 
 To publish by hand with the CodeAssist CLI:
 
